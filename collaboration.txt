@@ -3,4 +3,5 @@ csci356
 project3
 10/9024
 
-
+10/10 I copied some code for parsing messages for tags from here 
+https://stackoverflow.com/a/16441107

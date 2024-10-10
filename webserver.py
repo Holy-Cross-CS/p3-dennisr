@@ -107,9 +107,9 @@ class Response:
 # Class to organize messages on the whisper app
 # stores the text of the message itself and the name of the user who posted it
 class Message:
-    def __init__(self, text, user):
+    def __init__(self, text, topics):
         self.text = text
-        self.user = user
+        self.topics = []
 # Topic objects hold info about a topic on the whisper app.
 # Each topic is marked by a # symbol e.g. #whisper
 # a count of how many messages have mentioned the topic,
@@ -125,7 +125,6 @@ class Topic:
         self.msgs = []
 
 topicslist =[Topic("whatever"), Topic("something")]
-
 updates = threading.Condition()
 # Helper function to check if a string looks like a common IPv4 address. Note:
 # This is intentionally picky, only accepting the most common
@@ -594,14 +593,23 @@ def handle_get_topics_list(req):
     if "?" in req.path:
         req.path, params = req.path.split("?", 1)
         req.path = urllib.parse.unquote(req.path) + "?" + params
-        vNo = params[8]
     with updates:
-        msg = f"%s\n" % (vNo)
+        global topicListVersionNumber
+        msg = f"%s\n" % (topicListVersionNumber)
         for t in topicslist:
             msg += f"%d %d %s\n" % (len(t.msgs), t.likes, t.name)
-        
 
     return Response("200 OK", "text/plain", msg)
+
+def handle_http_post(req):
+    topics = [ t for t in req.body.split() if t.startswith('#') ]
+    msg = Message(req.body, topics)
+    with updates:
+        for t in msg.topics
+            if topicsList.contains(t):
+                
+
+    return Response("200 OK", "text/plain", "success")
 
 def handle_http_get_dir(url_path):
     log("Handling http get directory request for " + url_path)
@@ -692,6 +700,11 @@ def handle_http_get(req, conn):
         resp = handle_get_topics_list(req)
     else:
         resp = handle_http_get_file(req.path)
+    return resp
+
+# handle_http_post() returns a response for a POST request from the whisper app
+def handle_http_post(req):
+    resp = handle_get_message_post_request(req)
     return resp
 
 # handle_http_connection() reads one or more HTTP requests from a client, parses
