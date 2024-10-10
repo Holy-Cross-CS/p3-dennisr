@@ -606,7 +606,38 @@ def handle_get_topics_list(req):
             msg = f"%s\n" % (topicListVersionNumber)
             for t in topicsList:
                 msg += f"%d %d %s\n" % (len(t.msgsintopic), t.likes, t.name)
+    return Response("200 OK", "text/plain", msg)
 
+
+def handle_get_topic_feed(req):
+    print("getting feed")
+    global topicListVersionNumber
+    if "?" in req.path:
+        path, params = req.path.split("?", 1)
+    else:
+        params = "version=0"
+    topic = path[14:]
+    requestedVersion = int(params.split("=", 1)[1])
+    print("this is the topic" + topic)
+    with updates: 
+        while requestedVersion >= topicListVersionNumber:
+            print("waiting for updates")
+            updates.wait()
+            print("got here")
+        print("about to see if topic exists")
+        for i in range(0, len(topicsList)):
+            if topic == topicsList[i].name:
+                print("topic exists")
+                topictodisplay = topicsList[i]
+            else:
+                print("switching to default topic")
+                topictodisplay = topicsList[0]
+
+        msg = f"%s\n" % (topicListVersionNumber)
+        for m in topictodisplay.msgsintopic:
+            print("message from a topic should be here")
+            print(m)
+            msg += m + "\n"
     return Response("200 OK", "text/plain", msg)
 
 def handle_http_post_message(req):
@@ -614,8 +645,8 @@ def handle_http_post_message(req):
     global topicListVersionNumber
     global topicsList
     tagline, bodyline = req.body.split("\n", 1)
-    tags = tagline.split(" ", 1)[1:]
-    print("this is the tags in the message"+tags[0])
+    tags = tagline.split(" ")
+    print("this is the tag in the message"+tags[0])
     if not tags:
         print("new topic")
         tags = [topicsList[0]]
@@ -726,6 +757,8 @@ def handle_http_get(req, conn):
         resp = handle_http_get_whoami(conn)
     elif "whisper/topics" in req.path:
         resp = handle_get_topics_list(req)
+    elif "whisper/feed" in req.path:
+        resp = handle_get_topic_feed(req)
     else:
         resp = handle_http_get_file(req.path)
     return resp
