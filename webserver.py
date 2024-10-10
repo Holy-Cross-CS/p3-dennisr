@@ -107,9 +107,9 @@ class Response:
 # Class to organize messages on the whisper app
 # stores the text of the message itself and the name of the user who posted it
 class Message:
-    def __init__(self, text, topics):
+    def __init__(self, text, topicsinmsg):
         self.text = text
-        self.topics = []
+        self.topicsinmsg = topicsinmsg
 # Topic objects hold info about a topic on the whisper app.
 # Each topic is marked by a # symbol e.g. #whisper
 # a count of how many messages have mentioned the topic,
@@ -122,9 +122,9 @@ class Topic:
         self.name = name
         self.msgcount = 0
         self.likes = 0
-        self.msgs = []
+        self.msgsintopic = []
 
-topicslist =[Topic("whatever"), Topic("something")]
+topicsList =[Topic("whatever"), Topic("something")]
 updates = threading.Condition()
 # Helper function to check if a string looks like a common IPv4 address. Note:
 # This is intentionally picky, only accepting the most common
@@ -418,10 +418,7 @@ def handle_one_http_request(conn):
     if req.method == "GET":
         resp = handle_http_get(req, conn)
     elif req.method == "POST" or req.method == "PUT":
-        log("HTTP method '%s' is not yet supported by this server" % (req.method))
-        resp = Response("405 METHOD NOT ALLOWED",
-                "text/plain",
-                "PUT and POST methods not yet supported")
+        resp = handle_http_post(req)
     else:
         log("HTTP method '%s' is not recognized by this server" % (req.method))
         resp = Response("405 METHOD NOT ALLOWED",
@@ -590,24 +587,56 @@ def handle_http_get_quote(req):
 
 def handle_get_topics_list(req):
     log("Handling http get topics list request")
+    global topicListVersionNumber
     if "?" in req.path:
         req.path, params = req.path.split("?", 1)
-        req.path = urllib.parse.unquote(req.path) + "?" + params
-    with updates:
-        global topicListVersionNumber
-        msg = f"%s\n" % (topicListVersionNumber)
-        for t in topicslist:
-            msg += f"%d %d %s\n" % (len(t.msgs), t.likes, t.name)
+    else:
+        params = "version=0"
+    requestedVersion = int(params.split("=", 1)[1])
+    print("this is the version number requested!!!" + params)
+    if params == "version=0":
+        with updates:
+            msg = f"%s\n" % (topicListVersionNumber)
+            for t in topicsList:
+                msg += f"%d %d %s\n" % (len(t.msgsintopic), t.likes, t.name)
+    else:
+        with updates:
+            while requestedVersion > topicListVersionNumber:
+                updates.wait()
+            msg = f"%s\n" % (topicListVersionNumber)
+            for t in topicsList:
+                msg += f"%d %d %s\n" % (len(t.msgsintopic), t.likes, t.name)
 
     return Response("200 OK", "text/plain", msg)
 
-def handle_http_post(req):
-    topics = [ t for t in req.body.split() if t.startswith('#') ]
-    msg = Message(req.body, topics)
+def handle_http_post_message(req):
+    print("this is the message body " + req.body)
+    global topicListVersionNumber
+    global topicsList
+    tagline, bodyline = req.body.split("\n", 1)
+    tags = tagline.split(" ", 1)[1:]
+    print("this is the tags in the message"+tags[0])
+    if not tags:
+        print("new topic")
+        tags = [topicsList[0]]
+    msg = Message(bodyline, tags)
     with updates:
-        for t in msg.topics
-            if topicsList.contains(t):
-                
+        print("here now")
+        print(len(msg.topicsinmsg))
+        for i in range(0, len(msg.topicsinmsg)):
+            found = False
+            print("checking in existing topics for " + msg.topicsinmsg[i])
+            for t in topicsList:
+                if t.name == msg.topicsinmsg[i]:
+                    found = True
+                    print("found the topic")
+                    t.msgcount += 1
+                    t.msgsintopic.append(msg)
+            if not found:
+                print("adding a new topic")
+                topicsList.append(Topic(msg.topicsinmsg[i]))
+        topicListVersionNumber += 1
+        updates.notify_all()
 
     return Response("200 OK", "text/plain", "success")
 
@@ -688,7 +717,6 @@ def handle_http_get_file(url_path):
 def handle_http_get(req, conn):
     # Generate a response
     if req.path == "/status":
-        print("gonna do this ******************")
         resp = handle_http_get_status(conn)
     elif "/hello" in req.path:
         resp = handle_http_get_hello(req, conn)
@@ -704,7 +732,7 @@ def handle_http_get(req, conn):
 
 # handle_http_post() returns a response for a POST request from the whisper app
 def handle_http_post(req):
-    resp = handle_get_message_post_request(req)
+    resp = handle_http_post_message(req)
     return resp
 
 # handle_http_connection() reads one or more HTTP requests from a client, parses
