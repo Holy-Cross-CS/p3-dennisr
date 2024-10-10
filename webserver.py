@@ -107,7 +107,7 @@ class Response:
 # Class to organize messages on the whisper app
 # stores the text of the message itself and the name of the user who posted it
 class Message:
-    def _init_(self, text, user)
+    def __init__(self, text, user):
         self.text = text
         self.user = user
 # Topic objects hold info about a topic on the whisper app.
@@ -115,17 +115,18 @@ class Message:
 # a count of how many messages have mentioned the topic,
 # a count of how many likes the topic receives,
 # a list of messages mentioning the topic.
+
 topicListVersionNumber = 0
 class Topic:
-    def _init_(self, name)
+    def __init__(self, name):
         self.name = name
         self.msgcount = 0
         self.likes = 0
-        self.msgs = Message[]
+        self.msgs = []
 
 topicslist =[Topic("whatever"), Topic("something")]
 
-
+updates = threading.Condition()
 # Helper function to check if a string looks like a common IPv4 address. Note:
 # This is intentionally picky, only accepting the most common
 # 4-numbers-with-dots notation, to avoid likely user input errors.
@@ -573,7 +574,7 @@ def handle_http_get_hello(req, conn):
     return resp
 
 # handle_http_get_quote() returns a response for the GET /quote
-def handle_http_get_quote():
+def handle_http_get_quote(req):
     log("Handling http get quote request")
     with open('quotations.txt') as f:
         quotes = re.split('(?m)^%$', f.read())
@@ -588,7 +589,19 @@ def handle_http_get_quote():
     msg += '</body></html>'
     return Response("200 OK", "text/html", msg)
 
+def handle_get_topics_list(req):
+    log("Handling http get topics list request")
+    if "?" in req.path:
+        req.path, params = req.path.split("?", 1)
+        req.path = urllib.parse.unquote(req.path) + "?" + params
+        vNo = params[8]
+    with updates:
+        msg = f"%s\n" % (vNo)
+        for t in topicslist:
+            msg += f"%d %d %s\n" % (len(t.msgs), t.likes, t.name)
+        
 
+    return Response("200 OK", "text/plain", msg)
 
 def handle_http_get_dir(url_path):
     log("Handling http get directory request for " + url_path)
@@ -675,6 +688,8 @@ def handle_http_get(req, conn):
         resp = handle_http_get_quote()
     elif req.path == "/whoami":
         resp = handle_http_get_whoami(conn)
+    elif "whisper/topics" in req.path:
+        resp = handle_get_topics_list(req)
     else:
         resp = handle_http_get_file(req.path)
     return resp
