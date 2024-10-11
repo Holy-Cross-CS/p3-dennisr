@@ -120,6 +120,7 @@ topicListVersionNumber = 0
 class Topic:
     def __init__(self, name):
         self.name = name
+        self.versionnum = 0
         self.msgcount = 0
         self.likes = 0
         self.msgsintopic = []
@@ -596,16 +597,22 @@ def handle_get_topics_list(req):
     print("this is the version number requested!!!" + params)
     if params == "version=0":
         with updates:
+            print(topicsList)
             msg = f"%s\n" % (topicListVersionNumber)
-            for t in topicsList:
-                msg += f"%d %d %s\n" % (len(t.msgsintopic), t.likes, t.name)
+            for i in range(0, len(topicsList)):
+                msg += f"%d %d %s\n" % (len(topicsList[i].msgsintopic), topicsList[i].likes, topicsList[i].name)
     else:
         with updates:
+            print("check topics")
             while requestedVersion > topicListVersionNumber:
+                print(requestedVersion)
+                print(topicListVersionNumber)
                 updates.wait()
             msg = f"%s\n" % (topicListVersionNumber)
-            for t in topicsList:
-                msg += f"%d %d %s\n" % (len(t.msgsintopic), t.likes, t.name)
+            for i in range(0, len(topicsList)):
+                print("iterating through topics list")
+                print(topicsList[i].msgcount)
+                msg += f"%d %d %s\n" % (topicsList[i].msgcount, topicsList[i].likes, topicsList[i].name)
     return Response("200 OK", "text/plain", msg)
 
 
@@ -617,41 +624,48 @@ def handle_get_topic_feed(req):
     else:
         params = "version=0"
     topic = path[14:]
+    print("this is the requested version param" +params)
     requestedVersion = int(params.split("=", 1)[1])
     print("this is the topic" + topic)
     with updates: 
-        while requestedVersion >= topicListVersionNumber:
-            print("waiting for updates")
-            updates.wait()
-            print("got here")
         print("about to see if topic exists")
         for i in range(0, len(topicsList)):
+            found = False
             if topic == topicsList[i].name:
+                found = True
                 print("topic exists")
                 topictodisplay = topicsList[i]
-            else:
-                print("switching to default topic")
-                topictodisplay = topicsList[0]
-
+                break
+        if not found:
+            print("using default topic")
+            topictodisplay = topicsList[0]
+        print("gonna wait for updates")
+        while requestedVersion >= topictodisplay.versionnum:
+            print("waiting for updates")
+            print(requestedVersion)
+            print(topictodisplay.versionnum)
+            updates.wait()
+            print("got here")
+        print("not waiting anymore")
         msg = f"%s\n" % (topicListVersionNumber)
         for m in topictodisplay.msgsintopic:
             print("message from a topic should be here")
-            print(m)
-            msg += m + "\n"
+            print(m.text)
+            msg += m.text + "\n"
+        print("feed function done")
     return Response("200 OK", "text/plain", msg)
 
 def handle_http_post_message(req):
-    print("this is the message body " + req.body)
+    print("starting message post request")
     global topicListVersionNumber
     global topicsList
     tagline, bodyline = req.body.split("\n", 1)
     tags = tagline.split(" ")
-    print("this is the tag in the message"+tags[0])
-    if not tags:
-        print("new topic")
-        tags = [topicsList[0]]
-    msg = Message(bodyline, tags)
     with updates:
+        if not tags:
+            print("new topic")
+            tags = [topicsList[0]]
+        msg = Message(bodyline, tags)
         print("here now")
         print(len(msg.topicsinmsg))
         for i in range(0, len(msg.topicsinmsg)):
@@ -663,11 +677,29 @@ def handle_http_post_message(req):
                     print("found the topic")
                     t.msgcount += 1
                     t.msgsintopic.append(msg)
+                    print("incrementng v no")
+                    t.versionnum += 1
+                    topicListVersionNumber += 1
+                    break
             if not found:
                 print("adding a new topic")
-                topicsList.append(Topic(msg.topicsinmsg[i]))
-        topicListVersionNumber += 1
+                newtopic = Topic(msg.topicsinmsg[i])
+                print(newtopic.name)
+                print("incrementing vno")
+                newtopic.versionnum += 1
+                newtopic.msgcount += 1
+                topicListVersionNumber += 1
+                topicsList.append(newtopic)
+                print(topicsList[len(topicsList)-1].msgcount)
+                print(newtopic.versionnum)
+                print(newtopic.msgcount)
+        print(f"this is the updated version %d" % topicListVersionNumber)
         updates.notify_all()
+
+    return Response("200 OK", "text/plain", "success")
+
+def handle_http_post_like(req):
+
 
     return Response("200 OK", "text/plain", "success")
 
@@ -765,7 +797,10 @@ def handle_http_get(req, conn):
 
 # handle_http_post() returns a response for a POST request from the whisper app
 def handle_http_post(req):
-    resp = handle_http_post_message(req)
+    if "whisper/messages" in req.path:
+        resp = handle_http_post_message(req)
+    if "whisper/like" in req.path:
+        resp = handle_http_post_message(req)
     return resp
 
 # handle_http_connection() reads one or more HTTP requests from a client, parses
